@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="dashboard-container">
     <h1>📊 Dashboard de Repositórios</h1>
     <RepoCard
       v-for="repo in repos"
