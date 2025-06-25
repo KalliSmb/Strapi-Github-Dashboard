@@ -1,9 +1,7 @@
 <template>
-  <main style="padding: 2rem">
-    <Dashboard />
-  </main>
+  <Layout />
 </template>
 
 <script setup lang="ts">
-import Dashboard from './views/Dashboard.vue';
+import Layout from './components/Layout.vue';
 </script>
