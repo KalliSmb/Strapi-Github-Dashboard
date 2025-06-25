@@ -17,10 +17,15 @@
     <div class="deps-table">
       <div class="deps-header">
         <span>Nome</span>
-        <span>Versão Atual</span>
-        <span>Última Versão</span>
-        <span>Repositórios</span>
-        <span>Estado</span>
+        <span
+          class="sortable"
+          :class="{ active: sortByRepos }"
+          @click="toggleSortByRepos"
+          title="Ordenar por número de repositórios"
+        >
+          Repositórios
+          <span v-if="sortByRepos">⬇️</span>
+        </span>
       </div>
       <div
         v-for="dep in filteredDeps"
@@ -28,40 +33,47 @@
         class="deps-row"
       >
         <span>{{ dep.name }}</span>
-        <span>{{ dep.current_version }}</span>
-        <span>{{ dep.latest_version }}</span>
         <span>
-          <span
-            class="repo-count"
-            @mouseenter="showTooltip(dep.name)"
-            @mouseleave="hideTooltip"
-          >
+          <button class="repo-count" @click="openModal(dep)">
             {{ dep.repos.length }}
-            <span class="repo-tooltip" v-if="tooltipDep === dep.name">
-              <strong>Repositórios:</strong>
-              <ul>
-                <li v-for="repo in dep.repos" :key="repo.id">
-                  <a :href="repo.html_url" target="_blank">{{ repo.name }}</a>
-                </li>
-              </ul>
-            </span>
-          </span>
-        </span>
-        <span>
-          <span
-            v-if="dep.outdated"
-            class="badge badge-outdated"
-            title="Desatualizada"
-          >Desatualizada</span>
-          <span
-            v-else
-            class="badge badge-ok"
-            title="Atualizada"
-          >Atualizada</span>
+          </button>
         </span>
       </div>
       <div v-if="filteredDeps.length === 0" class="no-results">
         Nenhuma dependência encontrada.
+      </div>
+    </div>
+
+    <!-- Modal de detalhes -->
+    <div v-if="modalDep" class="modal-overlay" @click.self="closeModal">
+      <div class="modal">
+        <h3>Repositórios que usam <strong>{{ modalDep.name }}</strong></h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Repositório</th>
+              <th>Versão Atual</th>
+              <th>Última Versão</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="repo in modalDep.repos" :key="repo.id">
+              <td>
+                <router-link :to="`/repos/${repo.id}`" class="repo-link-modal">
+                  {{ repo.name }}
+                </router-link>
+              </td>
+              <td>{{ repo.current_version }}</td>
+              <td>{{ repo.latest_version }}</td>
+              <td>
+                <span v-if="repo.outdated" class="badge badge-outdated">Desatualizada</span>
+                <span v-else class="badge badge-ok">Atualizada</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <button class="btn-close" @click="closeModal">Fechar</button>
       </div>
     </div>
   </div>
@@ -75,7 +87,8 @@ const repos = ref<any[]>([]);
 const depsMap = ref<Record<string, any>>({});
 const search = ref('');
 const status = ref('');
-const tooltipDep = ref<string | null>(null);
+const modalDep = ref<any>(null);
+const sortByRepos = ref(false);
 
 onMounted(async () => {
   repos.value = await fetchRepositories();
@@ -85,25 +98,16 @@ onMounted(async () => {
       if (!map[dep.name]) {
         map[dep.name] = {
           name: dep.name,
-          current_version: dep.current_version,
-          latest_version: dep.latest_version,
-          outdated: dep.outdated,
           repos: [],
         };
       }
-      // Atualiza para a versão mais recente encontrada
-      if (dep.latest_version > map[dep.name].latest_version) {
-        map[dep.name].latest_version = dep.latest_version;
-      }
-      // Se alguma estiver desatualizada, marca como desatualizada
-      if (dep.outdated) {
-        map[dep.name].outdated = true;
-      }
-      // Adiciona o repositório à lista
       map[dep.name].repos.push({
         id: repo.id,
         name: repo.name,
         html_url: repo.html_url,
+        current_version: dep.current_version,
+        latest_version: dep.latest_version,
+        outdated: dep.outdated,
       });
     });
   });
@@ -120,19 +124,26 @@ const filteredDeps = computed(() => {
     );
   }
   if (status.value === 'outdated') {
-    list = list.filter(dep => dep.outdated);
+    list = list.filter(dep => dep.repos.some((r: any) => r.outdated));
   } else if (status.value === 'updated') {
-    list = list.filter(dep => !dep.outdated);
+    list = list.filter(dep => dep.repos.every((r: any) => !r.outdated));
   }
-  // Ordena por nome
-  return list.sort((a, b) => a.name.localeCompare(b.name));
+  if (sortByRepos.value) {
+    list = [...list].sort((a, b) => b.repos.length - a.repos.length);
+  } else {
+    list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return list;
 });
 
-function showTooltip(depName: string) {
-  tooltipDep.value = depName;
+function openModal(dep: any) {
+  modalDep.value = dep;
 }
-function hideTooltip() {
-  tooltipDep.value = null;
+function closeModal() {
+  modalDep.value = null;
+}
+function toggleSortByRepos() {
+  sortByRepos.value = !sortByRepos.value;
 }
 </script>
 
@@ -153,7 +164,7 @@ function hideTooltip() {
   border-radius: 8px;
   font-size: 1em;
   background: #fff;
-  min-width: 180px;
+  min-width: 140px;
 }
 .deps-table {
   background: #fff;
@@ -163,7 +174,7 @@ function hideTooltip() {
 }
 .deps-header, .deps-row {
   display: grid;
-  grid-template-columns: 2.5fr 1.2fr 1.2fr 1fr 1fr;
+  grid-template-columns: 2.5fr 1fr;
   align-items: center;
   padding: 1em 1.5em;
 }
@@ -199,31 +210,83 @@ function hideTooltip() {
   cursor: pointer;
   color: #3b5bdb;
   font-weight: 600;
-}
-.repo-tooltip {
-  position: absolute;
-  left: 0;
-  top: 2em;
-  background: #fff;
-  color: #213547;
-  border: 1px solid #ececec;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(60,60,60,0.13);
-  padding: 1em 1.2em;
-  z-index: 10;
-  min-width: 200px;
-  font-size: 0.98em;
-}
-.repo-tooltip ul {
-  margin: 0.5em 0 0 0;
-  padding: 0 0 0 1em;
-}
-.repo-tooltip li {
-  margin-bottom: 0.3em;
+  border: none;
+  background: none;
+  font-size: 1em;
+  padding: 0;
 }
 .no-results {
   padding: 2em;
   text-align: center;
   color: #adb5bd;
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 2em;
+  min-width: 350px;
+  max-width: 90vw;
+  box-shadow: 0 2px 16px rgba(60,60,60,0.18);
+}
+.modal h3 {
+  margin-top: 0;
+}
+.modal table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1em;
+}
+.modal th, .modal td {
+  padding: 0.5em 0.7em;
+  text-align: left;
+  border-bottom: 1px solid #f1f3f5;
+}
+.modal th {
+  background: #f1f3f5;
+}
+.repo-link-modal {
+  color: #3b5bdb;
+  text-decoration: none;
+  font-weight: 500;
+}
+.repo-link-modal:hover {
+  text-decoration: underline;
+}
+.btn-close {
+  margin-top: 1.5em;
+  background: #f1f3f5;
+  color: #3b5bdb;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5em 1.2em;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn-close:hover {
+  background: #e7f5ff;
+}
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  color: #3b5bdb;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+.sortable.active {
+  text-decoration: underline;
+}
+.sortable:hover {
+  color: #274690;
 }
 </style>
